@@ -1,0 +1,23 @@
+public class StationSales {
+    private String stationName;
+    private double totalSales;
+    private java.sql.Date salesDate;
+
+    public StationSales(String stationName, double totalSales, java.sql.Date salesDate) {
+        this.stationName = stationName;
+        this.totalSales = totalSales;
+        this.salesDate = salesDate;
+    }
+
+    public String getStationName() {
+        return stationName;
+    }
+
+    public double getTotalSales() {
+        return totalSales;
+    }
+
+    public java.sql.Date getSalesDate() {
+        return salesDate;
+    }
+}

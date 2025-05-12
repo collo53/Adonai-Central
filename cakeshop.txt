@@ -1,0 +1,1211 @@
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartPanel;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.data.time.Day;
+import org.jfree.data.time.TimeSeries;
+import org.jfree.data.time.TimeSeriesCollection;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.print.PrinterException;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.sql.Date;
+import java.text.SimpleDateFormat;
+import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+
+public class CakeShopPOS extends JFrame {
+    private Inventory inventory;
+    private Order order;
+    private DefaultTableModel inventoryTableModel;
+    private DefaultTableModel orderTableModel;
+    private DefaultTableModel stationSalesTableModel;
+    private JTable orderTable; // Made orderTable a class-level variable
+    private DefaultTableModel topSellingCakesTableModel;
+private JTable topSellingCakesTable;   
+    private JTextField inventoryCakeNameField, inventoryCakePriceField, inventoryCakeQuantityField, inventoryDateField;
+    private JTextField orderCakeNameField, orderCakeQuantityField;
+    private JComboBox<String> stationDropdown;
+    private DatabaseHelper dbHelper;
+    private boolean isAuthenticated = false;
+    private JSpinner dateSpinner; // Date picker for filtering sales
+
+    public CakeShopPOS() {
+        inventory = new Inventory();
+        order = new Order();
+        dbHelper = new DatabaseHelper();
+
+        setTitle("ADONAI");
+        setSize(800, 600);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout());
+
+        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.addTab("Inventory", createInventoryPanel());
+        tabbedPane.addTab("Order", createOrderPanel());
+        tabbedPane.addTab("Dashboard", createDashboardPanel());
+
+        tabbedPane.addChangeListener(e -> {
+            if (tabbedPane.getSelectedIndex() == 0 && !isAuthenticated) {
+                authenticateUser();
+            }
+        });
+
+        add(tabbedPane, BorderLayout.CENTER);
+add(createStatusBar(), BorderLayout.SOUTH);
+    }
+
+    private JPanel createInventoryPanel() {
+        JPanel inventoryPanel = new JPanel(new BorderLayout());
+
+        inventoryTableModel = new DefaultTableModel(new Object[]{"Name", "Price", "Quantity"}, 0);
+        JTable inventoryTable = new JTable(inventoryTableModel) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+                if (!isRowSelected(row)) {
+                    c.setBackground(row % 2 == 0 ? new Color(240, 240, 240) : getBackground());
+                }
+                return c;
+            }
+        };
+
+        // Customize table header
+        JTableHeader header = inventoryTable.getTableHeader();
+        header.setFont(new Font("SansSerif", Font.BOLD, 14));
+        header.setBackground(new Color(70, 130, 180));
+        header.setForeground(Color.WHITE);
+
+        // Center align header text
+        DefaultTableCellRenderer headerRenderer = new DefaultTableCellRenderer();
+        headerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+        for (int i = 0; i < inventoryTable.getColumnModel().getColumnCount(); i++) {
+            inventoryTable.getColumnModel().getColumn(i).setHeaderRenderer(headerRenderer);
+        }
+
+        inventoryTable.setRowHeight(25); // Increase row height
+        inventoryTable.setShowGrid(true); // Show grid lines
+        inventoryTable.setGridColor(new Color(220, 220, 220)); // Set grid color
+
+        inventoryPanel.add(new JScrollPane(inventoryTable), BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+
+        JButton addInventoryButton = new JButton("Add Inventory");
+        addInventoryButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                openAddInventoryDialog();
+            }
+        });
+        addInventoryButton.setBackground(Color.RED);
+        addInventoryButton.setForeground(Color.WHITE);
+        buttonPanel.add(addInventoryButton);
+
+        JButton viewInventoryButton = new JButton("View Inventory");
+        viewInventoryButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                updateInventoryTable();
+            }
+        });
+        viewInventoryButton.setBackground(Color.RED);
+        viewInventoryButton.setForeground(Color.WHITE);
+        buttonPanel.add(viewInventoryButton);
+
+        JButton downloadInventoryButton = new JButton("Download Inventory");
+        downloadInventoryButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                downloadInventory();
+            }
+        });
+        downloadInventoryButton.setBackground(Color.RED);
+        downloadInventoryButton.setForeground(Color.WHITE);
+        buttonPanel.add(downloadInventoryButton);
+
+        inventoryPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        return inventoryPanel;
+    }
+private void openAddInventoryDialog() {
+    JDialog addInventoryDialog = new JDialog(this, "Add Inventory Item", true);
+    addInventoryDialog.setSize(400, 300);
+    addInventoryDialog.setLayout(new GridLayout(4, 2)); // Reduced grid size
+
+    addInventoryDialog.add(new JLabel("Cake Name:"));
+    inventoryCakeNameField = new JTextField();
+    addInventoryDialog.add(inventoryCakeNameField);
+
+    addInventoryDialog.add(new JLabel("Cake Price:"));
+    inventoryCakePriceField = new JTextField();
+    addInventoryDialog.add(inventoryCakePriceField);
+
+    addInventoryDialog.add(new JLabel("Cake Quantity:"));
+    inventoryCakeQuantityField = new JTextField();
+    addInventoryDialog.add(inventoryCakeQuantityField);
+
+    JButton addButton = new JButton("Add to Inventory");
+    addButton.addActionListener(new ActionListener() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            addCakeToInventory();
+            addInventoryDialog.dispose();
+        }
+    });
+    addButton.setBackground(Color.RED);
+    addButton.setForeground(Color.WHITE);
+    addInventoryDialog.add(addButton);
+
+    JButton cancelButton = new JButton("Cancel");
+    cancelButton.addActionListener(new ActionListener() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            addInventoryDialog.dispose();
+        }
+    });
+    cancelButton.setBackground(Color.RED);
+    cancelButton.setForeground(Color.WHITE);
+    addInventoryDialog.add(cancelButton);
+
+    addInventoryDialog.setVisible(true);
+}
+
+    private JPanel createOrderPanel() {
+        JPanel orderPanel = new JPanel(new BorderLayout());
+
+        JPanel inputPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+
+        inputPanel.add(new JLabel("Cake Name:"), gbc);
+        gbc.gridx = 1;
+        orderCakeNameField = new JTextField(15);
+        inputPanel.add(orderCakeNameField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        inputPanel.add(new JLabel("Cake Quantity:"), gbc);
+        gbc.gridx = 1;
+        orderCakeQuantityField = new JTextField(15);
+        inputPanel.add(orderCakeQuantityField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        inputPanel.add(new JLabel("Station:"), gbc);
+        gbc.gridx = 1;
+        stationDropdown = new JComboBox<>(new String[]{"Station 1", "Station 2", "Station 3"});
+        inputPanel.add(stationDropdown, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        inputPanel.add(new JLabel("Date:"), gbc);
+        gbc.gridx = 1;
+        dateSpinner = new JSpinner(new SpinnerDateModel());
+        JSpinner.DateEditor dateEditor = new JSpinner.DateEditor(dateSpinner, "yyyy-MM-dd");
+        dateSpinner.setEditor(dateEditor);
+        inputPanel.add(dateSpinner, gbc);
+
+        JButton checkoutButton = new JButton("Checkout");
+        checkoutButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                processOrder();
+            }
+        });
+        checkoutButton.setBackground(Color.RED);
+        checkoutButton.setForeground(Color.WHITE);
+        gbc.gridx = 0;
+        gbc.gridy = 4;
+        gbc.gridwidth = 2;
+        inputPanel.add(checkoutButton, gbc);
+
+        orderPanel.add(inputPanel, BorderLayout.NORTH);
+
+        orderTableModel = new DefaultTableModel(new Object[]{"Name", "Price", "Quantity", "Total Price"}, 0);
+        orderTable = new JTable(orderTableModel); // Initialize orderTable here
+        orderPanel.add(new JScrollPane(orderTable), BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton printButton = new JButton("Print Order");
+        printButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                printOrder();
+            }
+        });
+        printButton.setBackground(Color.RED);
+        printButton.setForeground(Color.WHITE);
+        buttonPanel.add(printButton);
+
+        JButton downloadButton = new JButton("Download Orders");
+        downloadButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                downloadOrders();
+            }
+        });
+        downloadButton.setBackground(Color.RED);
+        downloadButton.setForeground(Color.WHITE);
+        buttonPanel.add(downloadButton);
+
+        orderPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        JPanel stationSalesPanel = new JPanel(new BorderLayout());
+        stationSalesPanel.setBorder(BorderFactory.createTitledBorder("Station Sales"));
+
+        stationSalesTableModel = new DefaultTableModel(new Object[]{"Station Name", "Total Sales", "Sales Date"}, 0);
+        JTable stationSalesTable = new JTable(stationSalesTableModel);
+        stationSalesPanel.add(new JScrollPane(stationSalesTable), BorderLayout.CENTER);
+
+        JButton filterButton = new JButton("Filter by Date");
+        filterButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                updateStationSalesTable();
+            }
+        });
+        filterButton.setBackground(Color.RED);
+        filterButton.setForeground(Color.WHITE);
+        stationSalesPanel.add(filterButton, BorderLayout.SOUTH);
+
+        orderPanel.add(stationSalesPanel, BorderLayout.EAST);
+
+        return orderPanel;
+    }
+    private JPanel createDashboardPanel() {
+    JPanel dashboardPanel = new JPanel(new BorderLayout());
+
+    // Create the sales graph panel and add it to the dashboard
+    JPanel salesGraphPanel = createSalesGraphPanel();
+    dashboardPanel.add(salesGraphPanel, BorderLayout.NORTH);
+
+    // Create the top-selling cakes table
+    JPanel topSellingPanel = new JPanel(new BorderLayout());
+    topSellingPanel.setBorder(BorderFactory.createTitledBorder("Top Selling Cakes"));
+
+    topSellingCakesTableModel = new DefaultTableModel(new Object[]{"Cake Name", "Quantity Sold", "Total Sales"}, 0);
+    topSellingCakesTable = new JTable(topSellingCakesTableModel);
+
+    topSellingPanel.add(new JScrollPane(topSellingCakesTable), BorderLayout.CENTER);
+
+    dashboardPanel.add(topSellingPanel, BorderLayout.CENTER);
+
+    JTextArea reportArea = new JTextArea(10, 30);
+    reportArea.setEditable(false);
+
+    JButton generateReportButton = new JButton("Generate Report");
+    generateReportButton.addActionListener(new ActionListener() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            generateReport(reportArea);
+        }
+    });
+    generateReportButton.setBackground(Color.RED);
+    generateReportButton.setForeground(Color.WHITE);
+
+    dashboardPanel.add(new JScrollPane(reportArea), BorderLayout.EAST);
+    dashboardPanel.add(generateReportButton, BorderLayout.SOUTH);
+
+    // Load top-selling cakes data
+    updateTopSellingCakesTable();
+
+    return dashboardPanel;
+}
+private void updateTopSellingCakesTable() {
+    topSellingCakesTableModel.setRowCount(0); // Clear previous data
+    List<Cake> topSellingCakes = dbHelper.getTopSellingCakes(); // Fetch data
+
+    for (Cake cake : topSellingCakes) {
+        double totalSales = cake.getTotalPrice(); // Adjust as needed
+        topSellingCakesTableModel.addRow(new Object[]{cake.getName(), cake.getQuantity(), totalSales});
+        System.out.println("Added to Table: " + cake.getName() + ", " + cake.getQuantity() + ", " + totalSales); // Debug line
+    }
+}
+
+
+    private JPanel createSalesGraphPanel() {
+    TimeSeriesCollection dataset = new TimeSeriesCollection();
+    TimeSeries salesSeries = new TimeSeries("Total Sales");
+
+    // Fetch sales data from the database
+    List<StationSales> salesList = dbHelper.getCombinedStationSales();
+
+    // Aggregate sales data by date
+    Map<Day, Double> aggregatedSales = new HashMap<>();
+
+    for (StationSales sale : salesList) {
+        Day salesDate = new Day(sale.getSalesDate());
+        double totalSales = sale.getTotalSales();
+
+        // Aggregate sales
+        aggregatedSales.merge(salesDate, totalSales, Double::sum);
+    }
+
+    // Add aggregated sales to TimeSeries
+    for (Map.Entry<Day, Double> entry : aggregatedSales.entrySet()) {
+        salesSeries.addOrUpdate(entry.getKey(), entry.getValue());
+    }
+
+    dataset.addSeries(salesSeries);
+
+    JFreeChart chart = ChartFactory.createTimeSeriesChart(
+            "Total Sales Over Time",
+            "Date",
+            "Sales Amount",
+            dataset,
+            true,
+            true,
+            false
+    );
+
+    ChartPanel chartPanel = new ChartPanel(chart);
+    chartPanel.setPreferredSize(new Dimension(700, 400));
+    chartPanel.setMouseWheelEnabled(true);
+
+    return chartPanel;
+}
+
+    private void authenticateUser() {
+        JDialog authDialog = new JDialog(this, "Authenticate", true);
+        authDialog.setSize(300, 200);
+        authDialog.setLayout(new GridLayout(3, 2));
+
+        authDialog.add(new JLabel("Username:"));
+        JTextField usernameField = new JTextField();
+        authDialog.add(usernameField);
+
+        authDialog.add(new JLabel("Password:"));
+        JPasswordField passwordField = new JPasswordField();
+        authDialog.add(passwordField);
+
+        JButton loginButton = new JButton("Login");
+        loginButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (authenticate(usernameField.getText(), new String(passwordField.getPassword()))) {
+                    isAuthenticated = true;
+                    authDialog.dispose();
+                } else {
+                    JOptionPane.showMessageDialog(authDialog, "Invalid credentials", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+        authDialog.add(loginButton);
+
+        authDialog.setVisible(true);
+    }
+
+    private boolean authenticate(String username, String password) {
+        // Authentication logic (replace with actual implementation)
+        return "admin".equals(username) && "password".equals(password);
+    }
+
+    private void addCakeToInventory() {
+        String name = inventoryCakeNameField.getText();
+        double price = Double.parseDouble(inventoryCakePriceField.getText());
+        int quantity = Integer.parseInt(inventoryCakeQuantityField.getText());
+        String currentDate = new SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date()); // Get the current date
+        Cake cake = new Cake(name, price, quantity);
+        inventory.addCake(cake);
+
+        dbHelper.addInventoryItem(cake, currentDate);
+
+        updateInventoryTable();
+    }
+
+   private void updateInventoryTable() {
+        inventoryTableModel.setRowCount(0);
+        List<Cake> cakes = dbHelper.getInventoryItems();
+        for (Cake cake : cakes) {
+            inventoryTableModel.addRow(new Object[]{cake.getName(), cake.getPrice(), cake.getQuantity(),cake.getInventoryDate()});
+        }
+        
+    }
+
+    private void updateStationSalesTable() {
+        stationSalesTableModel.setRowCount(0);
+        Date filterDate = new Date(((java.util.Date) dateSpinner.getValue()).getTime());
+        List<StationSales> stationSalesList = dbHelper.getStationSales(filterDate);
+        for (StationSales sale : stationSalesList) {
+            stationSalesTableModel.addRow(new Object[]{sale.getStationName(), sale.getTotalSales(), sale.getSalesDate()});
+        }
+    }
+
+
+
+ private void processOrder() {
+        String cakeName = orderCakeNameField.getText();
+        int quantity = Integer.parseInt(orderCakeQuantityField.getText());
+        Cake cake = inventory.getCake(cakeName);
+        if (cake != null && quantity <= cake.getQuantity()) {
+            double totalPrice = cake.getPrice() * quantity;
+            String stationName = stationDropdown.getSelectedItem().toString();
+            Date orderDate = new Date(((java.util.Date) dateSpinner.getValue()).getTime());
+
+            Cake orderCake = new Cake(cake.getName(), cake.getPrice(), quantity);
+            order.addCake(orderCake);
+            orderTableModel.addRow(new Object[]{orderCake.getName(), orderCake.getPrice(), orderCake.getQuantity(), totalPrice});
+
+            inventory.updateCakeQuantity(cakeName, quantity);
+            dbHelper.addOrder(orderCake, stationName, orderDate); // Add order to database
+            dbHelper.addStationSale(stationName, totalPrice, orderDate); // Add station sale to database
+
+            updateInventoryTable();
+            updateStationSalesTable();
+        } else {
+            JOptionPane.showMessageDialog(this, "Insufficient quantity or cake not found!", "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void printOrder() {
+        try {
+            orderTable.print();
+        } catch (PrinterException e) {
+            e.printStackTrace();
+        }
+    }
+ private void downloadOrders() {
+    JFileChooser fileChooser = new JFileChooser();
+    int option = fileChooser.showSaveDialog(this);
+    if (option == JFileChooser.APPROVE_OPTION) {
+        File file = fileChooser.getSelectedFile();
+        if (!file.getName().endsWith(".csv")) {
+            file = new File(file.getAbsolutePath() + ".csv");
+        }
+        
+        // Fetch order data from the database
+        DatabaseHelper dbHelper = new DatabaseHelper();
+        List<Cake> orderList = dbHelper.getOrders();
+        
+        try (FileWriter writer = new FileWriter(file)) {
+            // Write the header
+            writer.write("Name,Price,Quantity,Total Price,Order Date\n");
+
+            // Write each order item to the file
+            for (Cake cake : orderList) {
+                writer.write(cake.getName() + ",");
+                writer.write(cake.getPrice() + ",");
+                writer.write(cake.getQuantity() + ",");
+                writer.write(cake.getTotalPrice() + ",");
+                writer.write(cake.getOrderDate() + "\n");  // Assuming Cake has getOrderDate()
+            }
+            
+            JOptionPane.showMessageDialog(this, "Order data saved successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error saving order data: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+}
+
+
+private void downloadInventory() {
+    JFileChooser fileChooser = new JFileChooser();
+    int option = fileChooser.showSaveDialog(this);
+    if (option == JFileChooser.APPROVE_OPTION) {
+        File file = fileChooser.getSelectedFile();
+        if (!file.getName().endsWith(".csv")) {
+            file = new File(file.getAbsolutePath() + ".csv");
+        }
+        
+        // Fetch inventory data from the database
+        DatabaseHelper dbHelper = new DatabaseHelper();
+        List<Cake> inventoryList = dbHelper.getInventoryItems();
+        
+        try (FileWriter writer = new FileWriter(file)) {
+            // Write the header
+            writer.write("Name,Price,Quantity,Inventory Date\n");
+
+            // Write each inventory item to the file
+            for (Cake cake : inventoryList) {
+                writer.write(cake.getName() + ",");
+                writer.write(cake.getPrice() + ",");
+                writer.write(cake.getQuantity() + ",");
+                writer.write(cake.getInventoryDate() + "\n");  // Assuming Cake has getInventoryDate()
+            }
+            
+            JOptionPane.showMessageDialog(this, "Inventory data saved successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error saving inventory data: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+}
+
+  
+      private JPanel createStatusBar() {
+        JPanel statusBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JLabel statusLabel = new JLabel("Welcome to ADONAI Cake Shop POS!");
+        statusBar.add(statusLabel);
+        return statusBar;
+    }
+
+    private void generateReport(JTextArea reportArea) {
+        String report = "Sales Report Placeholder";
+        // Generate the report here
+        reportArea.setText(report);
+    }
+
+    
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            new CakeShopPOS().setVisible(true);
+        });
+    }
+}
+this other one is for cake.java
+public class Cake {
+    private String name;
+    private double price;
+    private int quantity;
+    private double totalPrice;
+    private String inventoryDate; // New field
+    private String orderDate;     // New field
+    private String station;
+
+    public Cake(String name, double price, int quantity) {
+        this.name = name;
+        this.price = price;
+        this.quantity = quantity;
+        this.inventoryDate = inventoryDate;
+    }
+
+    // Add constructors to include the date fields
+    public Cake(String name, double price, int quantity, String inventoryDate) {
+        this(name, price, quantity);
+        this.inventoryDate = inventoryDate;
+    }
+
+    public Cake(String name, double price, int quantity, double totalPrice, String orderDate) {
+        this(name, price, quantity);
+        this.totalPrice = totalPrice;
+        this.orderDate = orderDate;
+    }
+
+    // Getters and Setters
+    public String getName() {
+        return name;
+    }
+
+    public double getPrice() {
+        return price;
+    }
+
+    public int getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(int quantity) {
+        this.quantity = quantity;
+    }
+      public void setTotalPrice(double totalPrice) {
+        this.totalPrice = totalPrice;
+    }
+
+    public double getTotalPrice() {
+        return totalPrice;
+    }
+
+  
+
+    public String getInventoryDate() {
+        return inventoryDate;
+    }
+
+    public void setInventoryDate(String inventoryDate) {
+        this.inventoryDate = inventoryDate;
+    }
+
+    public String getOrderDate() {
+        return orderDate;
+    }
+
+    public void setOrderDate(String orderDate) {
+        this.orderDate = orderDate;
+    }
+     public String getStation() {
+        return station;
+    }
+
+    public void setStation(String station) {
+        this.station = station;
+    }
+}
+
+
+
+
+
+
+
+this is the sales only cakeshop without the station sales
+
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartPanel;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.data.time.Day;
+import org.jfree.data.time.TimeSeries;
+import org.jfree.data.time.TimeSeriesCollection;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.print.PrinterException;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.sql.Date;
+import java.text.SimpleDateFormat;
+import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.List;
+import java.util.ArrayList; // Used for SQL Date in the code
+
+
+public class CakeShopPOS extends JFrame {
+    private Inventory inventory;
+    private Order order;
+    private DefaultTableModel inventoryTableModel;
+    private DefaultTableModel orderTableModel;
+    private JTable orderTable; // Made orderTable a class-level variable
+    private DefaultTableModel topSellingCakesTableModel;
+private JTable topSellingCakesTable;   
+    private JTextField inventoryCakeNameField, inventoryCakePriceField, inventoryCakeQuantityField, inventoryDateField;
+    private JTextField orderCakeNameField, orderCakeQuantityField;
+    private DatabaseHelper dbHelper;
+    private boolean isAuthenticated = false;
+    private JSpinner dateSpinner; // Date picker for filtering sales
+
+    public CakeShopPOS() {
+        inventory = new Inventory();
+        
+        dbHelper = new DatabaseHelper();
+List<Cake> cakesFromDB = dbHelper.getInventoryItems();
+    for (Cake cake : cakesFromDB) {
+        inventory.addCake(cake);
+    }
+    
+    order = new Order();
+        setTitle("ADONAI");
+        setSize(800, 600);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout());
+
+        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.addTab("Inventory", createInventoryPanel());
+        tabbedPane.addTab("Order", createOrderPanel());
+        tabbedPane.addTab("Dashboard", createDashboardPanel());
+
+        tabbedPane.addChangeListener(e -> {
+            if (tabbedPane.getSelectedIndex() == 0 && !isAuthenticated) {
+                authenticateUser();
+            }
+        });
+
+        add(tabbedPane, BorderLayout.CENTER);
+add(createStatusBar(), BorderLayout.SOUTH);
+    }
+
+    private JPanel createInventoryPanel() {
+        JPanel inventoryPanel = new JPanel(new BorderLayout());
+
+        inventoryTableModel = new DefaultTableModel(new Object[]{"Name", "Price", "Quantity","Date Added"}, 0);
+        JTable inventoryTable = new JTable(inventoryTableModel) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+                if (!isRowSelected(row)) {
+                    c.setBackground(row % 2 == 0 ? new Color(240, 240, 240) : getBackground());
+                }
+                return c;
+            }
+        };
+
+        // Customize table header
+        JTableHeader header = inventoryTable.getTableHeader();
+        header.setFont(new Font("SansSerif", Font.BOLD, 14));
+        header.setBackground(new Color(70, 130, 180));
+        header.setForeground(Color.WHITE);
+
+        // Center align header text
+        DefaultTableCellRenderer headerRenderer = new DefaultTableCellRenderer();
+        headerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+        for (int i = 0; i < inventoryTable.getColumnModel().getColumnCount(); i++) {
+            inventoryTable.getColumnModel().getColumn(i).setHeaderRenderer(headerRenderer);
+        }
+
+        inventoryTable.setRowHeight(25); // Increase row height
+        inventoryTable.setShowGrid(true); // Show grid lines
+        inventoryTable.setGridColor(new Color(220, 220, 220)); // Set grid color
+
+        inventoryPanel.add(new JScrollPane(inventoryTable), BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+
+        JButton addInventoryButton = new JButton("Add Inventory");
+        addInventoryButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                openAddInventoryDialog();
+            }
+        });
+        addInventoryButton.setBackground(Color.RED);
+        addInventoryButton.setForeground(Color.WHITE);
+        buttonPanel.add(addInventoryButton);
+
+        JButton viewInventoryButton = new JButton("View Inventory");
+        viewInventoryButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                updateInventoryTable();
+            }
+        });
+        viewInventoryButton.setBackground(Color.RED);
+        viewInventoryButton.setForeground(Color.WHITE);
+        buttonPanel.add(viewInventoryButton);
+
+        JButton downloadInventoryButton = new JButton("Download Inventory");
+        downloadInventoryButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                downloadInventory();
+            }
+        });
+        downloadInventoryButton.setBackground(Color.RED);
+        downloadInventoryButton.setForeground(Color.WHITE);
+        buttonPanel.add(downloadInventoryButton);
+
+        inventoryPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        return inventoryPanel;
+    }
+private void openAddInventoryDialog() {
+    JDialog addInventoryDialog = new JDialog(this, "Add Inventory Item", true);
+    addInventoryDialog.setSize(400, 300);
+    addInventoryDialog.setLayout(new GridLayout(4, 2)); // Reduced grid size
+
+    addInventoryDialog.add(new JLabel("Cake Name:"));
+    inventoryCakeNameField = new JTextField();
+    addInventoryDialog.add(inventoryCakeNameField);
+
+    addInventoryDialog.add(new JLabel("Cake Price:"));
+    inventoryCakePriceField = new JTextField();
+    addInventoryDialog.add(inventoryCakePriceField);
+
+    addInventoryDialog.add(new JLabel("Cake Quantity:"));
+    inventoryCakeQuantityField = new JTextField();
+    addInventoryDialog.add(inventoryCakeQuantityField);
+
+    JButton addButton = new JButton("Add to Inventory");
+    addButton.addActionListener(new ActionListener() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            addCakeToInventory();
+            addInventoryDialog.dispose();
+        }
+    });
+    addButton.setBackground(Color.RED);
+    addButton.setForeground(Color.WHITE);
+    addInventoryDialog.add(addButton);
+
+    JButton cancelButton = new JButton("Cancel");
+    cancelButton.addActionListener(new ActionListener() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            addInventoryDialog.dispose();
+        }
+    });
+    cancelButton.setBackground(Color.RED);
+    cancelButton.setForeground(Color.WHITE);
+    addInventoryDialog.add(cancelButton);
+
+    addInventoryDialog.setVisible(true);
+}
+ private void addCakeToInventory() {
+        String name = inventoryCakeNameField.getText();
+        double price;
+        int quantity;
+        
+        try {
+            price = Double.parseDouble(inventoryCakePriceField.getText());
+            quantity = Integer.parseInt(inventoryCakeQuantityField.getText());
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Please enter valid numbers for price and quantity.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        java.util.Date utilDate = new java.util.Date(); // Current date
+        Date sqlDate = new Date(utilDate.getTime());
+
+        Cake cake = new Cake(name, price, quantity, sqlDate);
+        inventory.addCake(cake);
+        dbHelper.addInventoryItem(cake, sqlDate);
+
+        JOptionPane.showMessageDialog(this, "Cake added to inventory.", "Success", JOptionPane.INFORMATION_MESSAGE);
+        updateInventoryTable();
+    }
+
+    private JPanel createOrderPanel() {
+        JPanel orderPanel = new JPanel(new BorderLayout());
+
+        JPanel inputPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+
+        inputPanel.add(new JLabel("Cake Name:"), gbc);
+        gbc.gridx = 1;
+        orderCakeNameField = new JTextField(15);
+        inputPanel.add(orderCakeNameField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        inputPanel.add(new JLabel("Cake Quantity:"), gbc);
+        gbc.gridx = 1;
+        orderCakeQuantityField = new JTextField(15);
+        inputPanel.add(orderCakeQuantityField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        inputPanel.add(new JLabel("Date:"), gbc);
+        gbc.gridx = 1;
+        dateSpinner = new JSpinner(new SpinnerDateModel());
+        JSpinner.DateEditor dateEditor = new JSpinner.DateEditor(dateSpinner, "yyyy-MM-dd");
+        dateSpinner.setEditor(dateEditor);
+        inputPanel.add(dateSpinner, gbc);
+
+        JButton checkoutButton = new JButton("Checkout");
+        checkoutButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                processOrder();
+            }
+        });
+        checkoutButton.setBackground(Color.RED);
+        checkoutButton.setForeground(Color.WHITE);
+        gbc.gridx = 0;
+        gbc.gridy = 4;
+        gbc.gridwidth = 2;
+        inputPanel.add(checkoutButton, gbc);
+
+        orderPanel.add(inputPanel, BorderLayout.NORTH);
+
+        orderTableModel = new DefaultTableModel(new Object[]{"Name", "Price", "Quantity", "Total Price"}, 0);
+        orderTable = new JTable(orderTableModel); // Initialize orderTable here
+        orderPanel.add(new JScrollPane(orderTable), BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton printButton = new JButton("Print Order");
+        printButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                printOrder();
+            }
+        });
+        printButton.setBackground(Color.RED);
+        printButton.setForeground(Color.WHITE);
+        buttonPanel.add(printButton);
+
+        JButton downloadButton = new JButton("Download Orders");
+        downloadButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                downloadOrders();
+            }
+        });
+        downloadButton.setBackground(Color.RED);
+        downloadButton.setForeground(Color.WHITE);
+        buttonPanel.add(downloadButton);
+
+        orderPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        
+        return orderPanel;
+    }
+     private JPanel createDashboardPanel() {
+    JPanel dashboardPanel = new JPanel(new BorderLayout());
+
+    // Create the sales graph panel and add it to the dashboard
+    JPanel salesGraphPanel = createSalesGraphPanel();
+    dashboardPanel.add(salesGraphPanel, BorderLayout.NORTH);
+
+    // Create the top-selling cakes table
+    JPanel topSellingPanel = new JPanel(new BorderLayout());
+    topSellingPanel.setBorder(BorderFactory.createTitledBorder("Top Selling Cakes"));
+
+    topSellingCakesTableModel = new DefaultTableModel(new Object[]{"Cake Name", "Quantity Sold", "Total Sales"}, 0);
+    topSellingCakesTable = new JTable(topSellingCakesTableModel);
+
+    topSellingPanel.add(new JScrollPane(topSellingCakesTable), BorderLayout.CENTER);
+
+    dashboardPanel.add(topSellingPanel, BorderLayout.CENTER);
+
+    JTextArea reportArea = new JTextArea(10, 30);
+    reportArea.setEditable(false);
+
+    JButton generateReportButton = new JButton("Generate Report");
+    generateReportButton.addActionListener(new ActionListener() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            generateReport(reportArea);
+        }
+    });
+    generateReportButton.setBackground(Color.RED);
+    generateReportButton.setForeground(Color.WHITE);
+
+    dashboardPanel.add(new JScrollPane(reportArea), BorderLayout.EAST);
+    dashboardPanel.add(generateReportButton, BorderLayout.SOUTH);
+
+    // Load top-selling cakes data
+    updateTopSellingCakesTable();
+
+    return dashboardPanel;
+}
+  private void updateInventoryTable() {
+    System.out.println("Updating Inventory Table...");
+    inventoryTableModel.setRowCount(0);
+    List<Cake> cakes = dbHelper.getInventoryItems();
+    for (Cake cake : cakes) {
+        System.out.println("Cake: " + cake.getName() + ", Price: " + cake.getPrice() + ", Quantity: " + cake.getQuantity());
+        inventoryTableModel.addRow(new Object[]{cake.getName(), cake.getPrice(), cake.getQuantity(), cake.getInventoryDate()});
+    }
+}
+
+private void processOrder() {
+    String cakeName = orderCakeNameField.getText();
+    int quantity;
+
+    try {
+        quantity = Integer.parseInt(orderCakeQuantityField.getText());
+    } catch (NumberFormatException e) {
+        JOptionPane.showMessageDialog(this, "Please enter a valid number for quantity.", "Error", JOptionPane.ERROR_MESSAGE);
+        return;
+    }
+    Cake cake = inventory.getCake(cakeName);
+
+    if (cake != null) {
+        int currentQuantity = cake.getQuantity();
+        if (quantity <= currentQuantity) {
+            double totalPrice = cake.getPrice() * quantity;
+            Date orderDate = new Date(((java.util.Date) dateSpinner.getValue()).getTime());
+
+            Cake orderCake = new Cake(cake.getName(), cake.getPrice(), quantity, totalPrice, orderDate.toString());
+            order.addCake(orderCake);
+            orderTableModel.addRow(new Object[]{orderCake.getName(), orderCake.getPrice(), orderCake.getQuantity(), totalPrice});
+
+            // Correctly update inventory quantity
+            int remainingQuantity = currentQuantity - quantity;
+            System.out.println("Original Quantity: " + currentQuantity);
+            System.out.println("Ordered Quantity: " + quantity);
+            System.out.println("Remaining Quantity: " + remainingQuantity);
+
+            inventory.updateCakeQuantity(cakeName, remainingQuantity);
+            dbHelper.updateInventoryQuantity(cakeName, remainingQuantity); // Update in DB
+
+            dbHelper.addOrder(orderCake, orderDate); // Add order to database
+            updateInventoryTable(); // Refresh the inventory table
+        } else {
+            JOptionPane.showMessageDialog(this, "Insufficient quantity!", "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    } else {
+        JOptionPane.showMessageDialog(this, "Cake not found!", "Error", JOptionPane.ERROR_MESSAGE);
+    }
+}
+
+
+    private void downloadInventory() {
+    JFileChooser fileChooser = new JFileChooser();
+    int option = fileChooser.showSaveDialog(this);
+    if (option == JFileChooser.APPROVE_OPTION) {
+        File file = fileChooser.getSelectedFile();
+        if (!file.getName().endsWith(".csv")) {
+            file = new File(file.getAbsolutePath() + ".csv");
+        }
+        
+        // Fetch inventory data from the database
+        DatabaseHelper dbHelper = new DatabaseHelper();
+        List<Cake> inventoryList = dbHelper.getInventoryItems();
+        
+        try (FileWriter writer = new FileWriter(file)) {
+            // Write the header
+            writer.write("Name,Price,Quantity,Inventory Date\n");
+
+            // Write each inventory item to the file
+            for (Cake cake : inventoryList) {
+                writer.write(cake.getName() + ",");
+                writer.write(cake.getPrice() + ",");
+                writer.write(cake.getQuantity() + ",");
+                writer.write(cake.getInventoryDate() + "\n");  // Assuming Cake has getInventoryDate()
+            }
+            
+            JOptionPane.showMessageDialog(this, "Inventory data saved successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error saving inventory data: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+}
+private void printOrder() {
+        try {
+            orderTable.print();
+        } catch (PrinterException e) {
+            e.printStackTrace();
+        }
+    }
+ private void downloadOrders() {
+    JFileChooser fileChooser = new JFileChooser();
+    int option = fileChooser.showSaveDialog(this);
+    if (option == JFileChooser.APPROVE_OPTION) {
+        File file = fileChooser.getSelectedFile();
+        if (!file.getName().endsWith(".csv")) {
+            file = new File(file.getAbsolutePath() + ".csv");
+        }
+        
+        // Fetch order data from the database
+        DatabaseHelper dbHelper = new DatabaseHelper();
+        List<Cake> orderList = dbHelper.getOrders();
+        
+        try (FileWriter writer = new FileWriter(file)) {
+            // Write the header
+            writer.write("Name,Price,Quantity,Total Price,Order Date\n");
+
+            // Write each order item to the file
+            for (Cake cake : orderList) {
+                writer.write(cake.getName() + ",");
+                writer.write(cake.getPrice() + ",");
+                writer.write(cake.getQuantity() + ",");
+                writer.write(cake.getTotalPrice() + ",");
+                writer.write(cake.getOrderDate() + "\n");  // Assuming Cake has getOrderDate()
+            }
+            
+            JOptionPane.showMessageDialog(this, "Order data saved successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error saving order data: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+}
+
+    
+
+    private JPanel createSalesGraphPanel() {
+    TimeSeriesCollection dataset = new TimeSeriesCollection();
+    TimeSeries salesSeries = new TimeSeries("Total Sales");
+
+    
+    // Aggregate sales data by date
+    Map<Day, Double> aggregatedSales = new HashMap<>();
+
+   
+
+    // Add aggregated sales to TimeSeries
+    for (Map.Entry<Day, Double> entry : aggregatedSales.entrySet()) {
+        salesSeries.addOrUpdate(entry.getKey(), entry.getValue());
+    }
+
+    dataset.addSeries(salesSeries);
+
+    JFreeChart chart = ChartFactory.createTimeSeriesChart(
+            "Total Sales Over Time",
+            "Date",
+            "Sales Amount",
+            dataset,
+            true,
+            true,
+            false
+    );
+
+    ChartPanel chartPanel = new ChartPanel(chart);
+    chartPanel.setPreferredSize(new Dimension(700, 400));
+    chartPanel.setMouseWheelEnabled(true);
+
+    return chartPanel;
+}
+private void updateTopSellingCakesTable() {
+    topSellingCakesTableModel.setRowCount(0); // Clear previous data
+    List<Cake> topSellingCakes = dbHelper.getTopSellingCakes(); // Fetch data
+
+    for (Cake cake : topSellingCakes) {
+        double totalSales = cake.getTotalPrice(); // Adjust as needed
+        topSellingCakesTableModel.addRow(new Object[]{cake.getName(), cake.getQuantity(), totalSales});
+        System.out.println("Added to Table: " + cake.getName() + ", " + cake.getQuantity() + ", " + totalSales); // Debug line
+    }
+}
+private void generateReport(JTextArea reportArea) {
+        String report = "Sales Report Placeholder";
+        // Generate the report here
+        reportArea.setText(report);
+    }
+     private JPanel createStatusBar() {
+        JPanel statusBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JLabel statusLabel = new JLabel("Welcome to ADONAI Cake Shop POS!");
+        statusBar.add(statusLabel);
+        return statusBar;
+    }
+
+
+
+
+    private void authenticateUser() {
+        JDialog authDialog = new JDialog(this, "Authenticate", true);
+        authDialog.setSize(300, 200);
+        authDialog.setLayout(new GridLayout(3, 2));
+
+        authDialog.add(new JLabel("Username:"));
+        JTextField usernameField = new JTextField();
+        authDialog.add(usernameField);
+
+        authDialog.add(new JLabel("Password:"));
+        JPasswordField passwordField = new JPasswordField();
+        authDialog.add(passwordField);
+
+        JButton loginButton = new JButton("Login");
+        loginButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (authenticate(usernameField.getText(), new String(passwordField.getPassword()))) {
+                    isAuthenticated = true;
+                    authDialog.dispose();
+                } else {
+                    JOptionPane.showMessageDialog(authDialog, "Invalid credentials", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+        authDialog.add(loginButton);
+
+        authDialog.setVisible(true);
+    }
+
+
+    private boolean authenticate(String username, String password) {
+        // Authentication logic (replace with actual implementation)
+        return "admin".equals(username) && "password".equals(password);
+    }
+    
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            new CakeShopPOS().setVisible(true);
+        });
+    }
+}

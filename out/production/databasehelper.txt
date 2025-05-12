@@ -1,0 +1,681 @@
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+public class DatabaseHelper {
+    private final String jdbcUrl = "jdbc:mysql://localhost:3306/database1"; // Ensure this matches your DB
+    private final String dbUsername = "root"; // Your MySQL username
+    private final String dbPassword = "collins09"; // Your MySQL password
+
+    // Method to get a connection to the database
+    private Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(jdbcUrl, dbUsername, dbPassword);
+    }
+
+    // Method to add a cake to the inventory
+    public void addInventoryItem(Cake cake, String date) {
+        String query = "INSERT INTO inventory (name, price, quantity, inventory_date) VALUES (?, ?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, cake.getName());
+            stmt.setDouble(2, cake.getPrice());
+            stmt.setInt(3, cake.getQuantity());
+            stmt.setString(4, date); // Assuming Cake has getInventoryDate()
+            int rowsAffected = stmt.executeUpdate();
+            if (rowsAffected > 0) {
+                System.out.println("Inventory item added: " + cake.getName());
+            } else {
+                System.out.println("Failed to add inventory item: " + cake.getName());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Method to retrieve all inventory items
+    public List<Cake> getInventoryItems() {
+        List<Cake> cakes = new ArrayList<>();
+        String query = "SELECT name, price, quantity, inventory_date FROM inventory";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                Cake cake = new Cake(rs.getString("name"), rs.getDouble("price"), rs.getInt("quantity"), rs.getString("inventory_date"));
+                cakes.add(cake);
+                System.out.println("Fetched inventory item: " + cake.getName());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return cakes;
+    }
+
+    // Method to update the quantity of an inventory item
+   public void updateInventoryQuantity(String name, int quantity) {
+    String query = "UPDATE inventory SET quantity = quantity + ? WHERE name = ?";
+    try (Connection conn = getConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+        stmt.setInt(1, quantity);
+        stmt.setString(2, name);
+        int rowsAffected = stmt.executeUpdate();
+        if (rowsAffected > 0) {
+            System.out.println("Updated inventory quantity for: " + name);
+        } else {
+            System.out.println("Failed to update inventory quantity for: " + name);
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+}
+public boolean checkInventory(String name, int quantity) {
+    String query = "SELECT quantity FROM inventory WHERE name = ?";
+    try (Connection conn = getConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+        stmt.setString(1, name);
+        ResultSet rs = stmt.executeQuery();
+        if (rs.next()) {
+            int availableQuantity = rs.getInt("quantity");
+            System.out.println("Available quantity for " + name + ": " + availableQuantity);
+            return availableQuantity >= quantity; // Check if enough stock is available
+        } else {
+            System.out.println("Item not found in inventory: " + name);
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+    return false; // Return false if item is not found or insufficient stock
+}
+
+
+
+    // Method to add an order to the database
+  public void addOrder(Cake cake, String stationName, java.sql.Date orderDate) {
+    // Log initial inventory
+    System.out.println("Checking inventory before placing order for " + cake.getName());
+    if (checkInventory(cake.getName(), cake.getQuantity())) {
+        System.out.println("Sufficient inventory for " + cake.getName());
+        // Proceed to place the order if inventory is sufficient
+        String query = "INSERT INTO orders (name, price, quantity, total_price, station_name, order_date) VALUES (?, ?, ?, ?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, cake.getName());
+            stmt.setDouble(2, cake.getPrice());
+            stmt.setInt(3, cake.getQuantity());
+            stmt.setDouble(4, cake.getPrice() * cake.getQuantity());
+            stmt.setString(5, stationName);
+            stmt.setDate(6, orderDate);
+            int rowsAffected = stmt.executeUpdate();
+            if (rowsAffected > 0) {
+                System.out.println("Order added: " + cake.getName());
+                // Update the inventory after placing the order
+                updateInventoryQuantity(cake.getName(), -cake.getQuantity());
+                // Log inventory after order
+                System.out.println("Updated inventory after order for " + cake.getName());
+                checkInventory(cake.getName(), 0); // This will log the new quantity
+            } else {
+                System.out.println("Failed to add order: " + cake.getName());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    } else {
+        System.out.println("Insufficient quantity in inventory for: " + cake.getName());
+    }
+}
+
+
+
+    // Method to retrieve all orders from the database
+    public List<Cake> getOrders() {
+        List<Cake> cakes = new ArrayList<>();
+        String query = "SELECT name, price, quantity, total_price, order_date FROM orders";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                Cake cake = new Cake(rs.getString("name"), rs.getDouble("price"), rs.getInt("quantity"), rs.getDouble("total_price"), rs.getString("order_date"));
+                cakes.add(cake);
+                System.out.println("Fetched order: " + cake.getName());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return cakes;
+    }
+
+    // Method to calculate the total sales from all orders
+    public double calculateTotalSales() {
+        double totalSales = 0.0;
+        String query = "SELECT SUM(total_price) AS total_sales FROM orders";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                totalSales = rs.getDouble("total_sales");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return totalSales;
+    }
+
+    // Method to get the total number of orders
+    public int getNumberOfOrders() {
+        int numberOfOrders = 0;
+        String query = "SELECT COUNT(*) AS order_count FROM orders";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                numberOfOrders = rs.getInt("order_count");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return numberOfOrders;
+    }
+
+    // Method to get the total number of items sold
+    public int getTotalItemsSold() {
+        int totalItemsSold = 0;
+        String query = "SELECT SUM(quantity) AS total_items_sold FROM orders";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                totalItemsSold = rs.getInt("total_items_sold");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return totalItemsSold;
+    }
+
+    // Method to add a station sale to the database
+    public void addStationSale(String stationName, double totalSales, java.sql.Date salesDate) {
+        String query = "INSERT INTO station_sales (station_name, total_sales, sales_date) VALUES (?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, stationName);
+            stmt.setDouble(2, totalSales);
+            stmt.setDate(3, salesDate);
+            int rowsAffected = stmt.executeUpdate();
+            if (rowsAffected > 0) {
+                System.out.println("Station sale added: " + stationName);
+            } else {
+                System.out.println("Failed to add station sale: " + stationName);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Method to retrieve combined station sales from the database
+    public List<StationSales> getCombinedStationSales() {
+        List<StationSales> stationSalesList = new ArrayList<>();
+        String query = "SELECT station_name, SUM(total_sales) AS total_sales, sales_date " +
+                       "FROM station_sales " +
+                       "GROUP BY station_name, sales_date";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                StationSales stationSale = new StationSales(
+                    rs.getString("station_name"),
+                    rs.getDouble("total_sales"),
+                    rs.getDate("sales_date")
+                );
+                stationSalesList.add(stationSale);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return stationSalesList;
+    }
+
+    // Method to retrieve station sales data filtered by date
+    public List<StationSales> getStationSales(java.sql.Date filterDate) {
+        List<StationSales> stationSalesList = new ArrayList<>();
+        String query = "SELECT station_name, SUM(total_sales) AS total_sales, sales_date " +
+                       "FROM station_sales WHERE sales_date = ? " +
+                       "GROUP BY station_name, sales_date";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setDate(1, filterDate);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    StationSales stationSale = new StationSales(
+                        rs.getString("station_name"),
+                        rs.getDouble("total_sales"),
+                        rs.getDate("sales_date")
+                    );
+                    stationSalesList.add(stationSale);
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return stationSalesList;
+    }
+
+    public List<Cake> getTopSellingCakes() {
+    List<Cake> topSellingCakes = new ArrayList<>();
+    // SQL query to get top-selling cakes
+    String sql = "SELECT name, SUM(quantity) AS total_quantity, SUM(total_price) AS total_sales " +
+                 "FROM orders GROUP BY name ORDER BY total_sales DESC LIMIT 10";
+
+    try (Connection conn = getConnection();
+         PreparedStatement stmt = conn.prepareStatement(sql);
+         ResultSet rs = stmt.executeQuery()) {
+
+        while (rs.next()) {
+            String name = rs.getString("name");
+            int quantity = rs.getInt("total_quantity");
+            double totalSales = rs.getDouble("total_sales");
+
+            Cake cake = new Cake(name, 0, quantity); // Assuming price is not needed here
+            cake.setTotalPrice(totalSales); // Adjust this method or field if needed
+            topSellingCakes.add(cake);
+        }
+
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return topSellingCakes;
+}
+
+    
+}
+
+
+
+this is the corrected cake .java
+
+import java.sql.Date; // Ensure this is imported if you are using SQL Date
+
+public class Cake {
+    private String name;
+    private double price;
+    private int quantity;
+    private double totalPrice;
+    private Date inventoryDate; // Use Date for inventoryDate
+    private String orderDate;   // Keep orderDate as String
+    private String station;
+
+    // Constructor for adding to inventory (includes inventoryDate)
+    public Cake(String name, double price, int quantity, Date inventoryDate) {
+        this.name = name;
+        this.price = price;
+        this.quantity = quantity;
+        this.inventoryDate = inventoryDate;
+    }
+
+    // Constructor for orders (includes totalPrice and orderDate)
+    public Cake(String name, double price, int quantity, double totalPrice, String orderDate) {
+        this.name = name;
+        this.price = price;
+        this.quantity = quantity;
+        this.totalPrice = totalPrice;
+        this.orderDate = orderDate;
+    }
+    public Cake(String name, int quantity) {
+    this.name = name;
+    this.quantity = quantity;
+}
+
+
+    // Getters and Setters
+    public String getName() {
+        return name;
+    }
+
+    public double getPrice() {
+        return price;
+    }
+
+    public int getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(int quantity) {
+        this.quantity = quantity;
+    }
+
+    public double getTotalPrice() {
+        return totalPrice;
+    }
+
+    public void setTotalPrice(double totalPrice) {
+        this.totalPrice = totalPrice;
+    }
+
+    public Date getInventoryDate() {  // Getters and setters for Date
+        return inventoryDate;
+    }
+
+    public void setInventoryDate(Date inventoryDate) {  // Date instead of String
+        this.inventoryDate = inventoryDate;
+    }
+
+    public String getOrderDate() {
+        return orderDate;
+    }
+
+    public void setOrderDate(String orderDate) {
+        this.orderDate = orderDate;
+    }
+
+    public String getStation() {
+        return station;
+    }
+
+    public void setStation(String station) {
+        this.station = station;
+    }
+}
+
+
+this is the corrected databasehelper import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+public class DatabaseHelper {
+    private final String jdbcUrl = "jdbc:mysql://localhost:3306/database1";
+    private final String dbUsername = "root";
+    private final String dbPassword = "collins09";
+
+    // Method to get a connection to the database
+    private Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(jdbcUrl, dbUsername, dbPassword);
+    }
+
+    // Method to add a cake to the inventory
+    public void addInventoryItem(Cake cake, java.util.Date inventoryDate) {
+        String query = "INSERT INTO inventory (name, price, quantity, inventory_date) VALUES (?, ?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, cake.getName());
+            stmt.setDouble(2, cake.getPrice());
+            stmt.setInt(3, cake.getQuantity());
+            stmt.setDate(4, new java.sql.Date(inventoryDate.getTime()));
+            int rowsAffected = stmt.executeUpdate();
+            if (rowsAffected > 0) {
+                System.out.println("Inventory item added: " + cake.getName());
+            } else {
+                System.out.println("Failed to add inventory item: " + cake.getName());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Method to retrieve all inventory items
+    public List<Cake> getInventoryItems() {
+        List<Cake> cakes = new ArrayList<>();
+        String query = "SELECT name, price, quantity, inventory_date FROM inventory";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                String name = rs.getString("name");
+                double price = rs.getDouble("price");
+                int quantity = rs.getInt("quantity");
+                java.sql.Date inventoryDate = rs.getDate("inventory_date");
+                Cake cake = new Cake(name, price, quantity, inventoryDate);
+                cakes.add(cake);
+                System.out.println("Fetched inventory item: " + cake.getName());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return cakes;
+    }
+
+    // Method to update the quantity of an inventory item
+    // Method to update the quantity of an inventory item
+public void updateInventoryQuantity(String cakeName, int newQuantity) {
+    String sql = "UPDATE inventory SET quantity = ? WHERE name = ?";
+    try (Connection conn = getConnection(); // Use getConnection() which uses jdbcUrl, dbUsername, and dbPassword
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setInt(1, newQuantity);
+        pstmt.setString(2, cakeName);
+        System.out.println("Executing SQL: " + pstmt.toString());
+        int rowsAffected = pstmt.executeUpdate();
+
+        if (rowsAffected == 0) {
+            System.out.println("No rows updated. Ensure the cakeName exists in the database.");
+        } else {
+            System.out.println("Successfully updated inventory.");
+        }
+    } catch (SQLException e) {
+        System.err.println("SQL Error Code: " + e.getErrorCode());
+        System.err.println("SQL State: " + e.getSQLState());
+        System.err.println("Error Message: " + e.getMessage());
+        e.printStackTrace();
+    }
+}
+
+
+
+    // Method to check inventory before placing an order
+   public boolean checkInventory(String name, int quantity) {
+    String query = "SELECT quantity FROM inventory WHERE name = ?";
+    try (Connection conn = getConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+        stmt.setString(1, name);
+        try (ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                int availableQuantity = rs.getInt("quantity");
+                System.out.println("Checking inventory for " + name + ": Available = " + availableQuantity + ", Requested = " + quantity);
+                return availableQuantity >= quantity; // Check if enough stock is available
+            } else {
+                System.out.println("Item not found in inventory: " + name);
+            }
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+    return false; // Return false if item is not found or insufficient stock
+}
+
+
+    // Method to add an order to the database
+  public void addOrder(Cake cake, java.sql.Date orderDate) {
+    System.out.println("Placing order for cake: " + cake.getName() + ", Quantity: " + cake.getQuantity());
+    
+    // First, check if we have enough inventory
+    if (checkInventory(cake.getName(), cake.getQuantity())) {
+        System.out.println("Sufficient inventory for " + cake.getName());
+        
+        String orderQuery = "INSERT INTO orders (name, price, quantity, total_price, order_date) VALUES (?, ?, ?, ?, ?)";
+        Connection conn = null;
+        
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);  // Begin transaction
+            
+            // Add the order to the orders table
+            try (PreparedStatement orderStmt = conn.prepareStatement(orderQuery)) {
+                orderStmt.setString(1, cake.getName());
+                orderStmt.setDouble(2, cake.getPrice());
+                orderStmt.setInt(3, cake.getQuantity());
+                orderStmt.setDouble(4, cake.getPrice() * cake.getQuantity());
+                orderStmt.setDate(5, orderDate);
+
+                int rowsAffected = orderStmt.executeUpdate();
+                if (rowsAffected > 0) {
+                    System.out.println("Order successfully added for: " + cake.getName());
+
+                    // Fetch current inventory quantity from the database
+                    int currentInventoryQuantity = getInventoryQuantity(cake.getName());
+                    System.out.println("Current inventory for " + cake.getName() + " before update: " + currentInventoryQuantity);
+
+                    // Ensure we're only decrementing the correct amount (once)
+                    if (currentInventoryQuantity >= cake.getQuantity()) {
+                        int updatedQuantity = currentInventoryQuantity - cake.getQuantity();
+                        System.out.println("Updated quantity after order: " + updatedQuantity);
+                        
+                        // Update the inventory to reflect the reduced quantity
+                        updateInventoryQuantityTransaction(conn, cake.getName(), updatedQuantity);
+                    } else {
+                        System.out.println("Not enough stock available after processing.");
+                    }
+                    
+                } else {
+                    System.out.println("Failed to add order for: " + cake.getName());
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                conn.rollback();  // Rollback if any error occurs
+            } finally {
+                if (conn != null) {
+                    conn.commit();  // Commit the transaction
+                    conn.setAutoCommit(true);
+                    conn.close();
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    } else {
+        System.out.println("Insufficient inventory for: " + cake.getName());
+    }
+}
+
+private int getInventoryQuantity(String name) throws SQLException {
+    String query = "SELECT quantity FROM inventory WHERE name = ?";
+    try (Connection conn = getConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+        stmt.setString(1, name);
+        try (ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                return rs.getInt("quantity");
+            } else {
+                System.out.println("Item not found in inventory: " + name);
+            }
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+        throw e;  // Re-throw the exception to handle it properly in calling method
+    }
+    return 0;  // Return 0 if item not found
+}
+
+    // Method to update inventory quantity within the same transaction
+    private void updateInventoryQuantityTransaction(Connection conn, String name, int orderedQuantity) throws SQLException {
+    String query = "UPDATE inventory SET quantity = ? WHERE name = ?";
+    try (PreparedStatement stmt = conn.prepareStatement(query)) {
+        stmt.setInt(1, orderedQuantity);  // Set the updated quantity explicitly
+        stmt.setString(2, name);
+        int rowsAffected = stmt.executeUpdate();
+        if (rowsAffected > 0) {
+            System.out.println("Updated inventory quantity for: " + name + " to " + orderedQuantity);
+        } else {
+            System.out.println("Failed to update inventory quantity for: " + name);
+        }
+    }
+}
+    // Method to retrieve all orders from the database
+    public List<Cake> getOrders() {
+        List<Cake> cakes = new ArrayList<>();
+        String query = "SELECT name, price, quantity, total_price, order_date FROM orders";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                Cake cake = new Cake(rs.getString("name"), rs.getDouble("price"), rs.getInt("quantity"), rs.getDouble("total_price"), rs.getString("order_date"));
+                cakes.add(cake);
+                System.out.println("Fetched order: " + cake.getName());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return cakes;
+    }
+
+    // Method to calculate the total sales from all orders
+    public double calculateTotalSales() {
+        double totalSales = 0.0;
+        String query = "SELECT SUM(total_price) AS total_sales FROM orders";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                totalSales = rs.getDouble("total_sales");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return totalSales;
+    }
+
+    // Method to get the total number of orders
+    public int getNumberOfOrders() {
+        int numberOfOrders = 0;
+        String query = "SELECT COUNT(*) AS order_count FROM orders";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                numberOfOrders = rs.getInt("order_count");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return numberOfOrders;
+    }
+
+    // Method to get the total number of items sold
+    public int getTotalItemsSold() {
+        int totalItemsSold = 0;
+        String query = "SELECT SUM(quantity) AS total_items_sold FROM orders";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                totalItemsSold = rs.getInt("total_items_sold");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return totalItemsSold;
+    }
+
+    // Method to get the top-selling cakes
+    public List<Cake> getTopSellingCakes() {
+        List<Cake> topSellingCakes = new ArrayList<>();
+        String sql = "SELECT name, SUM(quantity) AS total_quantity, SUM(total_price) AS total_sales " +
+                     "FROM orders GROUP BY name ORDER BY total_sales DESC LIMIT 10";
+
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+
+            while (rs.next()) {
+                String name = rs.getString("name");
+                int quantity = rs.getInt("total_quantity");
+                double totalSales = rs.getDouble("total_sales");
+
+                Cake cake = new Cake(name, quantity);
+                cake.setTotalPrice(totalSales);
+                topSellingCakes.add(cake);
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        return topSellingCakes;
+    }
+}

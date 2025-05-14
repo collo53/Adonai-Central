@@ -1291,17 +1291,45 @@ private void openAddCakeDistributionDialog(String stationName) {
     // Button panel for Add and Cancel buttons
     JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
     buttonPanel.setBackground(new Color(245, 245, 245)); // Match background color
+JButton addButton = createFlatButton("Add Distribution", e -> {
+    String cakeName = (String) cakeNameComboBox.getSelectedItem();
+    String quantityText = quantityField.getText().trim();
 
-    JButton addButton = createFlatButton("Add Distribution", e -> {
-        String cakeName = (String) cakeNameComboBox.getSelectedItem();
-        int quantity = Integer.parseInt(quantityField.getText());
+    if (cakeName == null || cakeName.isEmpty() || quantityText.isEmpty()) {
+        JOptionPane.showMessageDialog(addDistributionDialog, "Please fill in all fields.", "Validation Error", JOptionPane.ERROR_MESSAGE);
+        return;
+    }
 
-        // Add the distribution record to the database
+    try {
+        int quantity = Integer.parseInt(quantityText);
+
+        if (quantity <= 0) {
+            JOptionPane.showMessageDialog(addDistributionDialog, "Quantity must be greater than zero.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
         DatabaseHelper dbHelper = new DatabaseHelper();
-        dbHelper.addCakesDistributed(stationName, cakeName, quantity); // Remove the date parameter
 
+        // Optional: Check inventory before adding
+        boolean isAvailable = dbHelper.checkInventory(cakeName, quantity);
+        if (!isAvailable) {
+            JOptionPane.showMessageDialog(addDistributionDialog,
+                "Not enough inventory for \"" + cakeName + "\".\nPlease reduce the quantity.",
+                "Inventory Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // ✅ Call method with correct types
+        dbHelper.addCakesDistributed(stationName, cakeName, quantity); // Now correct!
+
+        JOptionPane.showMessageDialog(addDistributionDialog, "Item distributed successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         addDistributionDialog.dispose();
-    });
+
+    } catch (NumberFormatException ex) {
+        JOptionPane.showMessageDialog(addDistributionDialog, "Please enter a valid number for quantity.", "Input Error", JOptionPane.ERROR_MESSAGE);
+    }
+});
+
     buttonPanel.add(addButton);
 
     JButton cancelButton = createFlatButton("Cancel", e -> addDistributionDialog.dispose());
